@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
 import axios from 'axios';
+import { PrismaService } from 'src/modules/prisma/prisma.service';
 import { SearchPodcastDto } from '../dto/search-podcast.dto';
 import { Podcast } from '../entities/podcast.entity';
 import { Episode } from '../entities/episode.entity';
