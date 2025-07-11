@@ -3,18 +3,22 @@ import { PrismaService } from '../../prisma/prisma.service';
 import axios from 'axios';
 import { SearchPodcastDto } from '../dto/search-podcast.dto';
 import { Podcast } from '../entities/podcast.entity';
-import { iTunesResponse } from '../types/iTunes-response';
-
+import { Episode } from '../entities/episode.entity';
+import {
+  iTunesPodcastResponse,
+  iTunesEpisodeResponse,
+} from '../types/iTunes-response';
 
 @Injectable()
 export class ItunesService {
   constructor(private readonly prisma: PrismaService) {}
 
-
-  async searchAndStorePodcasts(searchDto: SearchPodcastDto): Promise<Podcast[]> {
+  async searchAndStorePodcasts(
+    searchDto: SearchPodcastDto,
+  ): Promise<Podcast[]> {
     try {
       // Fetch data from iTunes API
-      const response = await axios.get<iTunesResponse>(
+      const response = await axios.get<iTunesPodcastResponse>(
         `https://itunes.apple.com/search`,
         {
           params: {
@@ -61,7 +65,54 @@ export class ItunesService {
     }
   }
 
-  private mapITunesResultToPodcastData(result: iTunesResponse['results'][number]) {
+  async getSuggestedEpisodes(searchDto: SearchPodcastDto): Promise<Episode[]> {
+    try {
+      // First, search for podcasts
+      const podcasts = await this.searchAndStorePodcasts(searchDto);
+
+      const allEpisodes: Episode[] = [];
+
+      // For each podcast, get its episodes
+      for (const podcast of podcasts) {
+        try {
+          const episodeResponse = await axios.get<iTunesEpisodeResponse>(
+            `https://itunes.apple.com/lookup`,
+            {
+              params: {
+                id: podcast.trackId,
+                entity: 'podcastEpisode',
+                limit: 10, // Get more episodes per podcast to have variety
+              },
+            },
+          );
+
+          // Filter episodes (remove the podcast itself from results)
+          const episodes = episodeResponse.data.results.filter(
+            (result) =>
+              result.kind === 'podcast-episode' ||
+              result.wrapperType === 'track',
+          );
+
+          allEpisodes.push(...episodes);
+        } catch (error) {
+          console.log(
+            `Failed to get episodes for podcast ${podcast.trackName}:`,
+            error.message,
+          );
+        }
+      }
+
+      // Return only 30 episodes, shuffled for variety
+      const shuffledEpisodes = allEpisodes.sort(() => Math.random() - 0.5);
+      return shuffledEpisodes.slice(0, 30);
+    } catch (error) {
+      throw new Error(`Failed to get suggested episodes: ${error.message}`);
+    }
+  }
+
+  private mapITunesResultToPodcastData(
+    result: iTunesPodcastResponse['results'][number],
+  ) {
     return {
       trackId: result.trackId,
       trackName: result.trackName,
@@ -78,5 +129,4 @@ export class ItunesService {
       description: result.description,
     };
   }
-
-} 
+}
