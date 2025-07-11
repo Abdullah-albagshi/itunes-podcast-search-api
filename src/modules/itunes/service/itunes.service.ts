@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
-import { SearchPodcastDto } from '../dto/search-podcast.dto';
-import { Podcast } from '../entities/podcast.entity';
 import { Episode } from '../entities/episode.entity';
+import type { Podcast } from '@prisma/client';
 import {
   iTunesPodcastResponse,
   iTunesEpisodeResponse,
@@ -13,16 +12,14 @@ import {
 export class ItunesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async searchAndStorePodcasts(
-    searchDto: SearchPodcastDto,
-  ): Promise<Podcast[]> {
+  async searchAndStorePodcasts(name: string): Promise<Podcast[]> {
     try {
       // Fetch data from iTunes API
       const response = await axios.get<iTunesPodcastResponse>(
         `https://itunes.apple.com/search`,
         {
           params: {
-            term: searchDto.query,
+            term: name,
             limit: 50,
             media: 'podcast',
           },
@@ -30,6 +27,10 @@ export class ItunesService {
       );
 
       const podcasts: Podcast[] = [];
+
+      if (response?.data?.resultCount === 0 || !response?.data?.results) {
+        return [];
+      }
 
       for (const result of response.data.results) {
         // Skip results without trackId
@@ -65,12 +66,16 @@ export class ItunesService {
     }
   }
 
-  async getSuggestedEpisodes(searchDto: SearchPodcastDto): Promise<Episode[]> {
+  async getSuggestedEpisodes(name: string): Promise<Episode[]> {
     try {
       // First, search for podcasts
-      const podcasts = await this.searchAndStorePodcasts(searchDto);
+      const podcasts = await this.searchAndStorePodcasts(name);
 
       const allEpisodes: Episode[] = [];
+
+      if (podcasts.length === 0) {
+        return [];
+      }
 
       // For each podcast, get its episodes
       for (const podcast of podcasts) {
@@ -85,6 +90,13 @@ export class ItunesService {
               },
             },
           );
+
+          if (
+            episodeResponse?.data?.resultCount === 0 ||
+            !episodeResponse?.data?.results
+          ) {
+            continue;
+          }
 
           // Filter episodes (remove the podcast itself from results)
           const episodes = episodeResponse.data.results.filter(
