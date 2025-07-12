@@ -26,8 +26,6 @@ export class ItunesService {
         },
       );
 
-      const podcasts: Podcast[] = [];
-
       if (response?.data?.resultCount === 0 || !response?.data?.results) {
         return [];
       }
@@ -39,27 +37,23 @@ export class ItunesService {
           continue;
         }
 
-        const existingPodcast = await this.prisma.podcast.findUnique({
+        await this.prisma.podcast.upsert({
           where: { trackId: result.trackId },
+          update: {
+            searchName: name,
+            ...this.mapITunesResultToPodcastData(result),
+          },
+          create: {
+            searchName: name,
+            ...this.mapITunesResultToPodcastData(result),
+          },
         });
-
-        const podcastData = this.mapITunesResultToPodcastData(result);
-
-        if (!existingPodcast) {
-          const podcast = await this.prisma.podcast.create({
-            data: podcastData,
-          });
-          podcasts.push(podcast);
-        } else {
-          // Update existing podcast
-          const updatedPodcast = await this.prisma.podcast.update({
-            where: { id: existingPodcast.id },
-            data: podcastData,
-          });
-          podcasts.push(updatedPodcast);
-        }
       }
-
+      const podcasts = await this.prisma.podcast.findMany({
+        where: {
+          searchName: name,
+        },
+      });
       return podcasts;
     } catch (error) {
       throw new Error(`Failed to search podcasts: ${error.message}`);
@@ -99,7 +93,10 @@ export class ItunesService {
           }
 
           // Filter episodes (remove the podcast itself from results)
-          const episodes = episodeResponse.data.results.filter(
+          const episodes = episodeResponse.data.results.map((result) => ({
+            ...result,
+            artistName: podcast.artistName,
+          })).filter(
             (result) =>
               result.kind === 'podcast-episode' ||
               result.wrapperType === 'track',
